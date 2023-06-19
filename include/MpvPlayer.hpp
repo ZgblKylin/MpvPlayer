@@ -1,6 +1,8 @@
 #ifndef MPV_PLAYER_HPP
 #define MPV_PLAYER_HPP
 
+#include <QtCore/QtCore>
+#include <QtGui/QtGui>
 #include <QtWidgets/QtWidgets>
 #include <QtQml/QtQml>
 #include <QtQuick/QtQuick>
@@ -8,6 +10,10 @@
 class MpvPlayer {
  public:
   virtual ~MpvPlayer();
+
+  QString name() const;
+  void setName(const QString& name);
+  virtual void nameChanged(const QString& name) = 0;
 
   void setUrl(const QUrl& url);
   QUrl url() const;
@@ -35,12 +41,13 @@ class MpvPlayer {
 
  protected:
   void processQEvent(QEvent* event);
+  void processMpvEvents();
 
  private:
   friend class MpvPlayerWidget;
   friend class MpvPlayerOpenGLWidget;
   friend class MpvPlayerQuickObject;
-  MpvPlayer();
+  explicit MpvPlayer(QObject* impl, const QString& name = "");
 
   QVariant getPlayerProperty_(const QString& name) const;
 
@@ -50,13 +57,15 @@ class MpvPlayer {
 
 class MpvPlayerWidget : public QWidget, public MpvPlayer {
   Q_OBJECT
+  Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
   Q_PROPERTY(QUrl url READ url WRITE setUrl NOTIFY urlChanged)
   Q_PROPERTY(bool paused READ isPaused WRITE setPaused NOTIFY pausedChanged)
 
  public:
-  MpvPlayerWidget(QWidget* parent = nullptr,
+  MpvPlayerWidget(const QString& name = "", QWidget* parent = nullptr,
                   Qt::WindowFlags f = Qt::WindowFlags());
 
+  Q_SIGNAL void nameChanged(const QString& name) override;
   Q_SIGNAL void urlChanged(const QUrl& url) override;
   Q_SIGNAL void pausedChanged(bool paused) override;
 
@@ -78,14 +87,16 @@ class MpvPlayerWidget : public QWidget, public MpvPlayer {
 
 class MpvPlayerOpenGLWidget : public QOpenGLWidget, public MpvPlayer {
   Q_OBJECT
+  Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
   Q_PROPERTY(QUrl url READ url WRITE setUrl NOTIFY urlChanged)
   Q_PROPERTY(bool paused READ isPaused WRITE setPaused NOTIFY pausedChanged)
 
  public:
-  MpvPlayerOpenGLWidget(QWidget* parent = nullptr,
+  MpvPlayerOpenGLWidget(const QString& name = "", QWidget* parent = nullptr,
                         Qt::WindowFlags f = Qt::WindowFlags());
   ~MpvPlayerOpenGLWidget() override;
 
+  Q_SIGNAL void nameChanged(const QString& name) override;
   Q_SIGNAL void urlChanged(const QUrl& url) override;
   Q_SIGNAL void pausedChanged(bool paused) override;
 
@@ -114,15 +125,17 @@ class MpvPlayerOpenGLWidget : public QOpenGLWidget, public MpvPlayer {
 //                                         "MpvPlayerQuickObject");
 class MpvPlayerQuickObject : public QQuickFramebufferObject, public MpvPlayer {
   Q_OBJECT
+  Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
   Q_PROPERTY(QUrl url READ url WRITE setUrl NOTIFY urlChanged)
   Q_PROPERTY(bool paused READ isPaused WRITE setPaused NOTIFY pausedChanged)
 
  public:
-  MpvPlayerQuickObject(QQuickItem* parent = 0);
+  MpvPlayerQuickObject(const QString& name = "", QQuickItem* parent = 0);
   ~MpvPlayerQuickObject() override;
 
   Renderer* createRenderer() const override;
 
+  Q_SIGNAL void nameChanged(const QString& name) override;
   Q_SIGNAL void urlChanged(const QUrl& url) override;
   Q_SIGNAL void pausedChanged(bool paused) override;
 

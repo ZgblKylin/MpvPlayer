@@ -5,8 +5,18 @@
 #include <QtQuickWidgets/QtQuickWidgets>
 #include <MpvPlayer.hpp>
 
-MpvPlayerQuickInput::MpvPlayerQuickInput(const QUrl& url, bool paused)
-    : url_(url), paused_(paused) {}
+MpvPlayerQuickInput::MpvPlayerQuickInput(const QString& name, const QUrl& url,
+                                         bool paused)
+    : name_(name), url_(url), paused_(paused) {}
+
+QString MpvPlayerQuickInput::name() const { return name_; }
+
+void MpvPlayerQuickInput::setName(const QString& name) {
+  if (name != name_) {
+    name_ = name;
+    emit nameChanged(name);
+  }
+}
 
 QUrl MpvPlayerQuickInput::url() const { return url_; }
 
@@ -102,9 +112,9 @@ int main(int argc, char* argv[]) {
     MpvPlayer* player;
     if (!is_qml) {
       if (is_widget) {
-        player = new MpvPlayerWidget;
+        player = new MpvPlayerWidget(QString::number(i));
       } else if (is_opengl) {
-        player = new MpvPlayerOpenGLWidget;
+        player = new MpvPlayerOpenGLWidget(QString::number(i));
       }
       layout->addWidget(dynamic_cast<QWidget*>(player), i / width, i % width);
     }
@@ -132,7 +142,7 @@ int main(int argc, char* argv[]) {
       } else {
         url = urls[i];
       }
-      playerList << new MpvPlayerQuickInput(url, true);
+      playerList << new MpvPlayerQuickInput(QString::number(i), url, true);
     }
     QQuickWidget* widget = qobject_cast<QQuickWidget*>(window);
     widget->rootContext()->setContextProperty("players",

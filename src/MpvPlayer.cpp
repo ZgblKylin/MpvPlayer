@@ -10,27 +10,41 @@
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 #include <mpv/render.h>
+#include <qloggingcategory.h>
+#include <qnamespace.h>
 #include "libmpv_qthelper.hpp"
 
 #include <QtWidgets/QtWidgets>
 
+Q_LOGGING_CATEGORY(MPV, "MPV",
+                   QLibraryInfo::isDebugBuild() ? QtDebugMsg : QtInfoMsg)
+#define MpvLog(log) log(MPV).nospace().noquote() << '[' << d->name_ << "] "
+#define MpvDebug() MpvLog(qCDebug)
+#define MpvInfo() MpvLog(qCInfo)
+#define MpvWarning() MpvLog(qCWarning)
+#define MpvCritical() MpvLog(qCCritical)
+#define MpvFatal(format, ...)                                                \
+  QMessageLogger(QT_MESSAGELOG_FILE, QT_MESSAGELOG_LINE, QT_MESSAGELOG_FUNC, \
+                 MPV().categoryName())                                       \
+      .fatal("[%s] " format, qPrintable(d->name_), ##__VA_ARGS__)
+
 namespace {
-#define CHECK_MPV_ERROR(x)                                     \
-  do {                                                         \
-    int ret = x;                                               \
-    if (ret != MPV_ERROR_SUCCESS) {                            \
-      qWarning().nospace() << "Error executing " << #x << ": " \
-                           << mpv_error_string(ret);           \
-    }                                                          \
+#define CHECK_MPV_ERROR(x)                             \
+  do {                                                 \
+    int ret = x;                                       \
+    if (ret != MPV_ERROR_SUCCESS) {                    \
+      MpvWarning() << "Error executing " << #x << ": " \
+                   << mpv_error_string(ret);           \
+    }                                                  \
   } while (0)
 
-#define CHECK_MPV_ERROR_RET(ret, x)                            \
-  do {                                                         \
-    ret = x;                                                   \
-    if (ret != MPV_ERROR_SUCCESS) {                            \
-      qWarning().nospace() << "Error executing " << #x << ": " \
-                           << mpv_error_string(ret);           \
-    }                                                          \
+#define CHECK_MPV_ERROR_RET(ret, x)                    \
+  do {                                                 \
+    ret = x;                                           \
+    if (ret != MPV_ERROR_SUCCESS) {                    \
+      MpvWarning() << "Error executing " << #x << ": " \
+                   << mpv_error_string(ret);           \
+    }                                                  \
   } while (0)
 }  // namespace
 
@@ -40,13 +54,18 @@ struct MpvPlayer::Private {
   MpvPlayer* q;
   explicit Private(MpvPlayer* q_ptr) : q(q_ptr) {}
 
+  QObject* impl_ = nullptr;
+  QString name_{};
   QUrl url_{};
   mpv_handle* mpv_ = nullptr;
   mpv_render_context* mpv_gl_ = nullptr;
 };
 
-MpvPlayer::MpvPlayer() : d(new Private(this)) {
-  static std::atomic_int client_id = ATOMIC_VAR_INIT(0);
+MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
+    : d(new Private(this)) {
+  d->impl_ = impl;
+  d->name_ = name;
+
   d->mpv_ = mpv_create();
   // Enable default bindings, because we're lazy. Normally, a player using
   // mpv as backend would implement its own key bindings.
@@ -69,7 +88,7 @@ MpvPlayer::MpvPlayer() : d(new Private(this)) {
   // "yes"));
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "input-vo-keyboard", "no"));
 
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "terminal", "yes"));
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "terminal", "no"));
   CHECK_MPV_ERROR(mpv_set_option_string(
       d->mpv_, "msg-level",
       QLibraryInfo::isDebugBuild() ? "all=v" : "all=status"));
@@ -90,13 +109,41 @@ MpvPlayer::MpvPlayer() : d(new Private(this)) {
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "decoder+vo"));
   // CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "yes"));
 
+  // Request log messages. They are received as MPV_EVENT_LOG_MESSAGE.
+  CHECK_MPV_ERROR(mpv_request_log_messages(
+      d->mpv_, QLibraryInfo::isDebugBuild() ? "v" : "status"));
+
+  // From this point on, the wakeup function will be called. The callback
+  // can come from any thread, so we use the QueuedConnection mechanism to
+  // relay the wakeup in a thread-safe way.
+  mpv_set_wakeup_callback(
+      d->mpv_,
+      [](void* ctx) {
+        MpvPlayer* self = static_cast<MpvPlayer*>(ctx);
+        QMetaObject::invokeMethod(
+            self->d->impl_, [self] { self->processMpvEvents(); },
+            Qt::QueuedConnection);
+      },
+      this);
+
   CHECK_MPV_ERROR(mpv_initialize(d->mpv_));
 }
 
 MpvPlayer::~MpvPlayer() {
   stop();
   // mpv_destroy(std::exchange(d->mpv_, nullptr));
-  mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
+  if (d->mpv_) {
+    mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
+  }
+}
+
+QString MpvPlayer::name() const { return d->name_; }
+
+void MpvPlayer::setName(const QString& name) {
+  if (name != d->name_) {
+    d->name_ = name;
+    emit nameChanged(d->name_);
+  }
 }
 
 void MpvPlayer::setUrl(const QUrl& url) {
@@ -104,6 +151,13 @@ void MpvPlayer::setUrl(const QUrl& url) {
     return;
   }
   stop();
+
+  if (d->name_.isEmpty()) {
+    QString name = url.toString();
+    name = name.split("/", Qt::SkipEmptyParts).last();
+    name = name.split("\\", Qt::SkipEmptyParts).last();
+    setName(name);
+  }
 
   d->url_ = url;
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "rtsp-transport", "udp"));
@@ -162,7 +216,7 @@ void MpvPlayer::uncropVideo() { playerCommand("vf", "remove", "@crop"); }
 QVariant MpvPlayer::command(const QVariant& args) {
   if (d->mpv_) {
     QVariant ret = mpv::qt::command_variant(d->mpv_, args);
-    qDebug().nospace() << "command " << args << ": " << ret;
+    MpvDebug() << "command " << args << ": " << ret;
     return ret;
   } else {
     return {};
@@ -174,7 +228,7 @@ bool MpvPlayer::setPlayerProperty(const QString& name, const QVariant& value) {
     int ret = 0;
     CHECK_MPV_ERROR_RET(ret,
                         mpv::qt::set_property_variant(d->mpv_, name, value));
-    qDebug().nospace() << "setProperty " << name << '=' << value << ": " << ret;
+    MpvDebug() << "setProperty " << name << '=' << value << ": " << ret;
     return ret == 0;
   } else {
     return false;
@@ -184,7 +238,7 @@ bool MpvPlayer::setPlayerProperty(const QString& name, const QVariant& value) {
 QVariant MpvPlayer::getPlayerProperty_(const QString& name) const {
   if (d->mpv_) {
     QVariant value = mpv::qt::get_property_variant(d->mpv_, name);
-    qDebug().nospace() << "getProperty " << name << ": " << value;
+    MpvDebug() << "getProperty " << name << ": " << value;
     return value;
   } else {
     return {};
@@ -201,8 +255,77 @@ void MpvPlayer::processQEvent(QEvent* event) {
   }
 }
 
-MpvPlayerWidget::MpvPlayerWidget(QWidget* parent, Qt::WindowFlags f)
-    : QWidget(parent, f), d(MpvPlayer::d.get()) {
+void MpvPlayer::processMpvEvents() {
+  // Process all events, until the event queue is empty.
+  while (d->mpv_) {
+    mpv_event* event = mpv_wait_event(d->mpv_, 0);
+    if (event->event_id == MPV_EVENT_NONE) {
+      break;
+    }
+
+    switch (event->event_id) {
+      case MPV_EVENT_LOG_MESSAGE: {
+        auto* msg = static_cast<mpv_event_log_message*>(event->data);
+
+        static const auto formatMessage = [](const mpv_event_log_message* msg) {
+          // Trim end
+          QString text = QString::fromUtf8(msg->text);
+          int length = text.length();
+          for (int i = length - 1; i >= 0; --i) {
+            if (text[i].isSpace()) {
+              --length;
+            } else {
+              break;
+            }
+          }
+          QString ret = QStringLiteral("[%1] %2").arg(
+              QString::fromUtf8(msg->prefix), text.left(length));
+          return ret;
+        };
+
+        switch (msg->log_level) {
+          case MPV_LOG_LEVEL_NONE:
+            continue;
+          case MPV_LOG_LEVEL_FATAL:
+            MpvFatal("%s", qPrintable(formatMessage(msg)));
+            break;
+          case MPV_LOG_LEVEL_ERROR:
+            MpvCritical() << formatMessage(msg);
+            break;
+          case MPV_LOG_LEVEL_WARN:
+            MpvWarning() << formatMessage(msg);
+            break;
+          case MPV_LOG_LEVEL_INFO:
+            MpvInfo() << formatMessage(msg);
+            break;
+          case MPV_LOG_LEVEL_V:
+            MpvDebug() << formatMessage(msg);
+            break;
+          case MPV_LOG_LEVEL_DEBUG:
+            MpvDebug() << formatMessage(msg);
+            break;
+          case MPV_LOG_LEVEL_TRACE:
+            MpvDebug() << formatMessage(msg);
+            break;
+        }
+      } break;
+
+      case MPV_EVENT_SHUTDOWN: {
+        if (d->mpv_) {
+          mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
+        }
+      } break;
+
+      default:
+        // Ignore uninteresting or unknown events.
+        break;
+    }
+  }
+}
+
+MpvPlayerWidget::MpvPlayerWidget(const QString& name, QWidget* parent,
+                                 Qt::WindowFlags f)
+    : QWidget(parent, f), MpvPlayer(this, name), d(MpvPlayer::d.get()) {
   setAttribute(Qt::WA_DontCreateNativeAncestors, true);
   setAttribute(Qt::WA_NativeWindow, true);
   int64_t wid = winId();
@@ -214,8 +337,9 @@ bool MpvPlayerWidget::event(QEvent* event) {
   return QWidget::event(event);
 }
 
-MpvPlayerOpenGLWidget::MpvPlayerOpenGLWidget(QWidget* parent, Qt::WindowFlags f)
-    : QOpenGLWidget(parent, f), d(MpvPlayer::d.get()) {}
+MpvPlayerOpenGLWidget::MpvPlayerOpenGLWidget(const QString& name,
+                                             QWidget* parent, Qt::WindowFlags f)
+    : QOpenGLWidget(parent, f), MpvPlayer(this, name), d(MpvPlayer::d.get()) {}
 
 MpvPlayerOpenGLWidget::~MpvPlayerOpenGLWidget() {
   makeCurrent();
@@ -371,8 +495,11 @@ class MpvPlayerQuickObject::MpvQuickRenderer
   MpvPlayer::Private* d;
 };
 
-MpvPlayerQuickObject::MpvPlayerQuickObject(QQuickItem* parent)
-    : QQuickFramebufferObject(parent), d(MpvPlayer::d.get()) {}
+MpvPlayerQuickObject::MpvPlayerQuickObject(const QString& name,
+                                           QQuickItem* parent)
+    : QQuickFramebufferObject(parent),
+      MpvPlayer(this, name),
+      d(MpvPlayer::d.get()) {}
 
 MpvPlayerQuickObject::~MpvPlayerQuickObject() {
   if (d->mpv_gl_) {

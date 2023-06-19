@@ -22,6 +22,7 @@ Item {
             width: grid.cellWidth
             height: grid.cellHeight
 
+            name: model.name
             url: model.url
             paused: model.paused
         }
