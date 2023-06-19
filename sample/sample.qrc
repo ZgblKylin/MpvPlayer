@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/MpvPlayerSample">
+        <file>sample.qml</file>
+    </qresource>
+</RCC>
