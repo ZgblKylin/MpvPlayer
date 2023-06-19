@@ -34,6 +34,7 @@ class MpvPlayer {
   virtual void videoStarted() = 0;
 
   QSize videoSize() const;
+  QSize displaySize() const;
   void setCropVideo(const QRect& rect);
   void uncropVideo();
 

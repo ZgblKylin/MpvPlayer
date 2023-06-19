@@ -199,6 +199,11 @@ QSize MpvPlayer::videoSize() const {
                getPlayerProperty<int>("height"));
 }
 
+QSize MpvPlayer::displaySize() const {
+  return QSize(getPlayerProperty<int>("dwidth"),
+               getPlayerProperty<int>("dheight"));
+}
+
 void MpvPlayer::setCropVideo(const QRect& rect) {
   uncropVideo();
   if (rect.isValid()) {
