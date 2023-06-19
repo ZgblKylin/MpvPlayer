@@ -217,6 +217,9 @@ QVariant MpvPlayer::command(const QVariant& args) {
   if (d->mpv_) {
     QVariant ret = mpv::qt::command_variant(d->mpv_, args);
     MpvDebug() << "command " << args << ": " << ret;
+    if (args.toList().contains("stop")) {
+      emit playStateChanged(Stop);
+    }
     return ret;
   } else {
     return {};
@@ -264,6 +267,63 @@ void MpvPlayer::processMpvEvents() {
     }
 
     switch (event->event_id) {
+      case MPV_EVENT_START_FILE: {  /// 6: Notification before playback start of
+                                    /// a file (before the file is loaded).* See
+                                    /// also mpv_event and mpv_event_start_file.
+      } break;
+
+      case MPV_EVENT_PROPERTY_CHANGE: {
+        mpv_event_property* prop = (mpv_event_property*)event->data;
+        // qDebug()<<"prop->name:"<<QString(prop->name);
+        if (strcmp(prop->name, "duration") == 0) {
+          if (prop->format == MPV_FORMAT_DOUBLE) {
+            double time = *(double*)prop->data;
+            emit durationChanged(time);
+          }
+        } else if (strcmp(prop->name, "pause") == 0) {
+          if (prop->format == MPV_FORMAT_FLAG) {
+            int flag = *(int*)prop->data;
+            emit playStateChanged(flag ? Play : Stop);
+          }
+        } else if (strcmp(prop->name, "eof-reached") == 0) {
+          if (prop->format == MPV_FORMAT_FLAG) {
+            int flag = *(int*)prop->data;
+            if (flag) {
+              emit playStateChanged(EndReached);
+            }
+          }
+        }
+        break;
+      }
+      case MPV_EVENT_FILE_LOADED: {
+        QTimer::singleShot(5, d->impl_, [this]() {
+          int64_t width, height;
+          // mpv_get_property(d->mpv_, "dwidth", MPV_FORMAT_INT64, &width);
+          // mpv_get_property(d->mpv_, "dheight", MPV_FORMAT_INT64, &height);
+          emit videoStarted();
+        });
+      } break;
+
+      case MPV_EVENT_VIDEO_RECONFIG: {
+        /**
+         * Happens after video changed in some way. This can happen on
+         * resolution changes, pixel format changes, or video filter changes.
+         * The event is sent after the video filters and the VO are
+         * reconfigured. Applications embedding a mpv window should listen to
+         * this event in order to resize the window if needed. Note that this
+         * event can happen sporadically, and you should check yourself whether
+         * the video parameters really changed before doing something expensive.
+         */
+      } break;
+
+      case MPV_EVENT_AUDIO_RECONFIG: {
+        /**
+         * Similar to MPV_EVENT_VIDEO_RECONFIG. This is relatively
+         * uninteresting, because there is no such thing as audio output
+         * embedding.
+         */
+      } break;
+
       case MPV_EVENT_LOG_MESSAGE: {
         auto* msg = static_cast<mpv_event_log_message*>(event->data);
 

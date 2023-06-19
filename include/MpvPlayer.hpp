@@ -27,6 +27,12 @@ class MpvPlayer {
   void resume();
   void stop();
 
+  enum PlayState { Play, Pause, EndReached, Stop, Unknown };
+  virtual void playStateChanged(int state) = 0;
+  virtual void durationChanged(double value) = 0;
+  virtual void videoSizeChanged(int width, int height) = 0;
+  virtual void videoStarted() = 0;
+
   QSize videoSize() const;
   void setCropVideo(const QRect& rect);
   void uncropVideo();
@@ -68,6 +74,10 @@ class MpvPlayerWidget : public QWidget, public MpvPlayer {
   Q_SIGNAL void nameChanged(const QString& name) override;
   Q_SIGNAL void urlChanged(const QUrl& url) override;
   Q_SIGNAL void pausedChanged(bool paused) override;
+  Q_SIGNAL void playStateChanged(int state) override;
+  Q_SIGNAL void durationChanged(double value) override;
+  Q_SIGNAL void videoSizeChanged(int width, int height) override;
+  Q_SIGNAL void videoStarted() override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
     return MpvPlayer::command(args);
@@ -99,6 +109,10 @@ class MpvPlayerOpenGLWidget : public QOpenGLWidget, public MpvPlayer {
   Q_SIGNAL void nameChanged(const QString& name) override;
   Q_SIGNAL void urlChanged(const QUrl& url) override;
   Q_SIGNAL void pausedChanged(bool paused) override;
+  Q_SIGNAL void playStateChanged(int state) override;
+  Q_SIGNAL void durationChanged(double value) override;
+  Q_SIGNAL void videoSizeChanged(int width, int height) override;
+  Q_SIGNAL void videoStarted() override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
     return MpvPlayer::command(args);
@@ -138,6 +152,10 @@ class MpvPlayerQuickObject : public QQuickFramebufferObject, public MpvPlayer {
   Q_SIGNAL void nameChanged(const QString& name) override;
   Q_SIGNAL void urlChanged(const QUrl& url) override;
   Q_SIGNAL void pausedChanged(bool paused) override;
+  Q_SIGNAL void playStateChanged(int state) override;
+  Q_SIGNAL void durationChanged(double value) override;
+  Q_SIGNAL void videoSizeChanged(int width, int height) override;
+  Q_SIGNAL void videoStarted() override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
     return MpvPlayer::command(args);
