@@ -332,47 +332,57 @@ void MpvPlayer::processMpvEvents() {
       case MPV_EVENT_LOG_MESSAGE: {
         auto* msg = static_cast<mpv_event_log_message*>(event->data);
 
-        static const auto formatMessage = [](const mpv_event_log_message* msg) {
-          // Trim end
-          QString text = QString::fromUtf8(msg->text);
-          int length = text.length();
-          for (int i = length - 1; i >= 0; --i) {
-            if (text[i].isSpace()) {
-              --length;
-            } else {
-              break;
-            }
-          }
-          QString ret = QStringLiteral("[%1] %2").arg(
-              QString::fromUtf8(msg->prefix), text.left(length));
-          return ret;
+        static const QMap<int, QtMsgType> kMpvToQtMsgType = {
+            {MPV_LOG_LEVEL_FATAL, QtFatalMsg},
+            {MPV_LOG_LEVEL_ERROR, QtCriticalMsg},
+            {MPV_LOG_LEVEL_WARN, QtWarningMsg},
+            {MPV_LOG_LEVEL_INFO, QtInfoMsg},
+            {MPV_LOG_LEVEL_V, QtDebugMsg},
+            {MPV_LOG_LEVEL_DEBUG, QtDebugMsg},
+            {MPV_LOG_LEVEL_TRACE, QtDebugMsg},
         };
-
-        switch (msg->log_level) {
-          case MPV_LOG_LEVEL_NONE:
-            continue;
-          case MPV_LOG_LEVEL_FATAL:
-            MpvFatal("%s", qPrintable(formatMessage(msg)));
-            break;
-          case MPV_LOG_LEVEL_ERROR:
-            MpvCritical() << formatMessage(msg);
-            break;
-          case MPV_LOG_LEVEL_WARN:
-            MpvWarning() << formatMessage(msg);
-            break;
-          case MPV_LOG_LEVEL_INFO:
-            MpvInfo() << formatMessage(msg);
-            break;
-          case MPV_LOG_LEVEL_V:
-            MpvDebug() << formatMessage(msg);
-            break;
-          case MPV_LOG_LEVEL_DEBUG:
-            MpvDebug() << formatMessage(msg);
-            break;
-          case MPV_LOG_LEVEL_TRACE:
-            MpvDebug() << formatMessage(msg);
-            break;
+        auto it = kMpvToQtMsgType.find(msg->log_level);
+        if (it == kMpvToQtMsgType.cend()) {
+          continue;
         }
+        QtMsgType level = it.value();
+
+        QString prefix = QString::fromUtf8(msg->prefix);
+
+        // Trim text end
+        QString text = QString::fromUtf8(msg->text);
+        int length = text.length();
+        for (int i = length - 1; i >= 0; --i) {
+          if (text[i].isSpace()) {
+            --length;
+          } else {
+            break;
+          }
+        }
+        text = text.left(length);
+
+        QString message = QStringLiteral("[%1] %2").arg(prefix, text);
+        switch (level) {
+          case QtFatalMsg:
+            MpvFatal("%s", qPrintable(message));
+            break;
+          case QtCriticalMsg:
+            MpvCritical() << message;
+            break;
+          case QtWarningMsg:
+            MpvWarning() << message;
+            break;
+          case QtInfoMsg:
+            MpvInfo() << message;
+            break;
+          case QtDebugMsg:
+            MpvDebug() << message;
+            break;
+          default:
+            continue;
+        }
+
+        emit newLogMessage(level, prefix, text);
       } break;
 
       case MPV_EVENT_SHUTDOWN: {

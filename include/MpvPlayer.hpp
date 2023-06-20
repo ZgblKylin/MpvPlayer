@@ -32,6 +32,8 @@ class MpvPlayer {
   virtual void durationChanged(double value) = 0;
   virtual void videoSizeChanged(int width, int height) = 0;
   virtual void videoStarted() = 0;
+  virtual void newLogMessage(QtMsgType level, const QString& prefix,
+                             const QString& msg) = 0;
 
   QSize videoSize() const;
   QSize displaySize() const;
@@ -79,6 +81,8 @@ class MpvPlayerWidget : public QWidget, public MpvPlayer {
   Q_SIGNAL void durationChanged(double value) override;
   Q_SIGNAL void videoSizeChanged(int width, int height) override;
   Q_SIGNAL void videoStarted() override;
+  Q_SIGNAL void newLogMessage(QtMsgType level, const QString& prefix,
+                              const QString& msg) override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
     return MpvPlayer::command(args);
@@ -114,6 +118,8 @@ class MpvPlayerOpenGLWidget : public QOpenGLWidget, public MpvPlayer {
   Q_SIGNAL void durationChanged(double value) override;
   Q_SIGNAL void videoSizeChanged(int width, int height) override;
   Q_SIGNAL void videoStarted() override;
+  Q_SIGNAL void newLogMessage(QtMsgType level, const QString& prefix,
+                              const QString& msg) override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
     return MpvPlayer::command(args);
@@ -157,6 +163,8 @@ class MpvPlayerQuickObject : public QQuickFramebufferObject, public MpvPlayer {
   Q_SIGNAL void durationChanged(double value) override;
   Q_SIGNAL void videoSizeChanged(int width, int height) override;
   Q_SIGNAL void videoStarted() override;
+  Q_SIGNAL void newLogMessage(QtMsgType level, const QString& prefix,
+                              const QString& msg) override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
     return MpvPlayer::command(args);
