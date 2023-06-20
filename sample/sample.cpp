@@ -57,7 +57,11 @@ int main(int argc, char* argv[]) {
   parser.addOption(QCommandLineOption(
       QStringList() << "r"
                     << "repeat",
-      "Repeat count of first video for multiple players", "repeat", "0"));
+      "Repeat count of first video for multiple players", "repeat", "1"));
+  parser.addOption(
+      QCommandLineOption(QStringList() << "s"
+                                       << "split",
+                         "Used with --repeat, split first video into n count"));
   parser.addPositionalArgument("url", "Video urls", "urls...");
   parser.process(app);
 
@@ -65,20 +69,25 @@ int main(int argc, char* argv[]) {
   bool is_widget = parser.value("type").toLower() == "widget";
   bool is_opengl = parser.value("type").toLower() == "opengl";
   bool is_qml = parser.value("type").toLower() == "qml";
-  int count = parser.value("repeat").toInt();
+  int count = std::max(parser.value("repeat").toInt(), 1);
+  bool split = parser.isSet("split");
   QStringList urls = parser.positionalArguments();
   qDebug() << "is_opengl_window:" << is_opengl_window;
   qDebug() << "is_widget:" << is_widget;
   qDebug() << "is_opengl:" << is_opengl;
   qDebug() << "is_qml:" << is_qml;
   qDebug() << "count:" << count;
+  qDebug() << "split:" << split;
   qDebug() << "urls:" << urls;
-  if (count > 0) {
+  if (count > 1) {
     QString url = urls.first();
     urls = QStringList();
     for (int i = 0; i < count; ++i) {
       urls << url;
     }
+  }
+  if (split) {
+    count = std::pow(std::ceil(std::sqrt(count)), 2);
   }
 
   if ((!is_widget && !is_opengl && !is_qml) || urls.isEmpty()) {
@@ -133,6 +142,12 @@ int main(int argc, char* argv[]) {
         players[i]->play(QUrl::fromLocalFile(urls[i]));
       } else {
         players[i]->play(urls[i]);
+      }
+      if (split) {
+        int row = i / width;
+        int col = i % width;
+        players[i]->setCropVideo(QRectF(col * 1.0 / width, row * 1.0 / height,
+                                        1.0 / width, 1.0 / height));
       }
     }
   } else {
