@@ -57,7 +57,7 @@ struct MpvPlayer::Private {
   QObject* impl_ = nullptr;
   QString name_{};
   QUrl url_{};
-  mpv_handle* mpv_ = nullptr;
+  struct mpv_handle* mpv_ = nullptr;
   mpv_render_context* mpv_gl_ = nullptr;
 };
 
@@ -178,6 +178,8 @@ void MpvPlayer::play(const QUrl& url) {
   }
   setPlayerProperty("pause", false);
 }
+
+struct mpv_handle* MpvPlayer::mpv_handle() const { return d->mpv_; }
 
 void MpvPlayer::pause() { setPlayerProperty("true", false); }
 

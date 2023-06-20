@@ -7,6 +7,7 @@
 #include <QtQml/QtQml>
 #include <QtQuick/QtQuick>
 
+struct mpv_handle;
 class MpvPlayer {
  public:
   virtual ~MpvPlayer();
@@ -18,6 +19,8 @@ class MpvPlayer {
   void setUrl(const QUrl& url);
   QUrl url() const;
   virtual void urlChanged(const QUrl& url) = 0;
+
+  struct mpv_handle* mpv_handle() const;
 
   void play(const QUrl& url = QUrl());
   void pause();
