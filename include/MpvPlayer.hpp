@@ -38,6 +38,7 @@ class MpvPlayer {
   QSize videoSize() const;
   QSize displaySize() const;
   void setCropVideo(const QRect& rect);
+  void setCropVideo(const QRectF& rect_ratio);
   void uncropVideo();
 
   template <typename... Args>

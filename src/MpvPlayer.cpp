@@ -205,6 +205,7 @@ QSize MpvPlayer::displaySize() const {
 }
 
 void MpvPlayer::setCropVideo(const QRect& rect) {
+  // https://ffmpeg.org/ffmpeg-filters.html#crop
   uncropVideo();
   if (rect.isValid()) {
     playerCommand("vf", "add",
@@ -213,6 +214,19 @@ void MpvPlayer::setCropVideo(const QRect& rect) {
                       .arg(rect.height())
                       .arg(rect.x())
                       .arg(rect.y()));
+  }
+}
+
+void MpvPlayer::setCropVideo(const QRectF& rect_ratio) {
+  // https://ffmpeg.org/ffmpeg-filters.html#crop
+  uncropVideo();
+  if (rect_ratio.isValid()) {
+    playerCommand("vf", "add",
+                  QStringLiteral("@crop:crop=iw*%1:ih*%2:iw*%3:ih*%4")
+                      .arg(rect_ratio.width())
+                      .arg(rect_ratio.height())
+                      .arg(rect_ratio.x())
+                      .arg(rect_ratio.y()));
   }
 }
 
