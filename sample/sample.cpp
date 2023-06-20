@@ -37,6 +37,8 @@ void MpvPlayerQuickInput::setPaused(bool paused) {
 }
 
 int main(int argc, char* argv[]) {
+  QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+  QCoreApplication::setAttribute(Qt::AA_UseHighDpiPixmaps);
   QApplication app(argc, argv);
 
   // Qt sets the locale in the QGuiApplication constructor, but libmpv
