@@ -18,15 +18,25 @@
 
 Q_LOGGING_CATEGORY(MPV, "MPV",
                    QLibraryInfo::isDebugBuild() ? QtDebugMsg : QtInfoMsg)
-#define MpvLog(log) log(MPV).nospace().noquote() << '[' << d->name_ << "] "
-#define MpvDebug() MpvLog(qCDebug)
-#define MpvInfo() MpvLog(qCInfo)
-#define MpvWarning() MpvLog(qCWarning)
-#define MpvCritical() MpvLog(qCCritical)
+#define MpvLog(name, log) log(MPV).nospace().noquote() << '[' << name << "] "
+
+#define MpvDebug() MpvLog(d->name_, qCDebug)
+#define MpvInfo() MpvLog(d->name_, qCInfo)
+#define MpvWarning() MpvLog(d->name_, qCWarning)
+#define MpvCritical() MpvLog(d->name_, qCCritical)
 #define MpvFatal(format, ...)                                                \
   QMessageLogger(QT_MESSAGELOG_FILE, QT_MESSAGELOG_LINE, QT_MESSAGELOG_FUNC, \
                  MPV().categoryName())                                       \
       .fatal("[%s] " format, qPrintable(d->name_), ##__VA_ARGS__)
+
+#define MpvPDebug() MpvLog(name_, qCDebug)
+#define MpvPInfo() MpvLog(name_, qCInfo)
+#define MpvPWarning() MpvLog(name_, qCWarning)
+#define MpvPCritical() MpvLog(name_, qCCritical)
+#define MpvPFatal(format, ...)                                               \
+  QMessageLogger(QT_MESSAGELOG_FILE, QT_MESSAGELOG_LINE, QT_MESSAGELOG_FUNC, \
+                 MPV().categoryName())                                       \
+      .fatal("[%s] " format, qPrintable(name_), ##__VA_ARGS__)
 
 namespace {
 #define CHECK_MPV_ERROR(x)                             \
@@ -59,7 +69,167 @@ struct MpvPlayer::Private {
   QUrl url_{};
   struct mpv_handle* mpv_ = nullptr;
   mpv_render_context* mpv_gl_ = nullptr;
+
+  std::atomic_bool mpv_event_thread_running_ = ATOMIC_VAR_INIT(false);
+  std::thread mpv_event_thread_{};
+  void processMpvEvents();
 };
+
+void MpvPlayer::Private::processMpvEvents() {
+  // Process all events, until the event queue is empty.
+  while (mpv_event_thread_running_.load(std::memory_order_acquire) && mpv_) {
+    mpv_event* event = mpv_wait_event(mpv_, 1);
+    if (event->event_id == MPV_EVENT_NONE) {
+      break;
+    }
+
+    switch (event->event_id) {
+      case MPV_EVENT_START_FILE: {  /// 6: Notification before playback start of
+                                    /// a file (before the file is loaded).* See
+                                    /// also mpv_event and mpv_event_start_file.
+      } break;
+
+      case MPV_EVENT_PROPERTY_CHANGE: {
+        mpv_event_property* prop = (mpv_event_property*)event->data;
+        static constexpr const int kDuration = 1;
+        static constexpr const int kPause = 2;
+        static constexpr const int kEof = 3;
+        static const QMap<QString, int> kPropertyMap = {
+            {"duration", kDuration}, {"pause", kPause}, {"eof-reached", kEof}};
+        switch (kPropertyMap.value(prop->name, -1)) {
+          case kDuration:
+            if (prop->format == MPV_FORMAT_DOUBLE) {
+              double time = *(double*)prop->data;
+              emit q->durationChanged(time);
+            }
+          case kPause:
+            if (prop->format == MPV_FORMAT_FLAG) {
+              int flag = *(int*)prop->data;
+              emit q->playStateChanged(flag ? Play : Stop);
+            }
+          case kEof:
+            if (prop->format == MPV_FORMAT_FLAG) {
+              int flag = *(int*)prop->data;
+              if (flag) {
+                emit q->playStateChanged(EndReached);
+              }
+            }
+          default:
+            break;
+        }
+        break;
+      }
+      case MPV_EVENT_FILE_LOADED: {
+        QTimer::singleShot(5, impl_, [this]() {
+          int64_t width, height;
+          // mpv_get_property(mpv_, "dwidth", MPV_FORMAT_INT64, &width);
+          // mpv_get_property(mpv_, "dheight", MPV_FORMAT_INT64, &height);
+          emit q->videoStarted();
+        });
+      } break;
+
+      case MPV_EVENT_VIDEO_RECONFIG: {
+        /**
+         * Happens after video changed in some way. This can happen on
+         * resolution changes, pixel format changes, or video filter changes.
+         * The event is sent after the video filters and the VO are
+         * reconfigured. Applications embedding a mpv window should listen to
+         * this event in order to resize the window if needed. Note that this
+         * event can happen sporadically, and you should check yourself whether
+         * the video parameters really changed before doing something expensive.
+         */
+      } break;
+
+      case MPV_EVENT_AUDIO_RECONFIG: {
+        /**
+         * Similar to MPV_EVENT_VIDEO_RECONFIG. This is relatively
+         * uninteresting, because there is no such thing as audio output
+         * embedding.
+         */
+      } break;
+
+      case MPV_EVENT_LOG_MESSAGE: {
+        auto* msg = static_cast<mpv_event_log_message*>(event->data);
+
+        QtMsgType level;
+        if (msg->log_level >= MPV_LOG_LEVEL_FATAL) {
+          level = QtCriticalMsg;
+        } else if (msg->log_level >= MPV_LOG_LEVEL_ERROR) {
+          level = QtCriticalMsg;
+        } else if (msg->log_level >= MPV_LOG_LEVEL_WARN) {
+          level = QtWarningMsg;
+        } else if (msg->log_level >= MPV_LOG_LEVEL_INFO) {
+          level = QtInfoMsg;
+        } else if (msg->log_level >= MPV_LOG_LEVEL_V) {
+          level = QtDebugMsg;
+        } else if (msg->log_level >= MPV_LOG_LEVEL_DEBUG) {
+          continue;
+          // level = QtDebugMsg;
+        } else if (msg->log_level >= MPV_LOG_LEVEL_TRACE) {
+          continue;
+        } else {
+          continue;
+        }
+
+        QString prefix = QString::fromUtf8(msg->prefix);
+
+        // Trim text end
+        QString text = QString::fromUtf8(msg->text);
+        int length = text.length();
+        for (int i = length - 1; i >= 0; --i) {
+          if (text[i].isSpace()) {
+            --length;
+          } else {
+            break;
+          }
+        }
+        text = text.left(length);
+
+        QString message = QStringLiteral("[%1] %2").arg(prefix, text);
+        // switch (level) {
+        //   case QtFatalMsg:
+        //     MpvPFatal("%s", qPrintable(message));
+        //     break;
+        //   case QtCriticalMsg:
+        //     MpvPCritical() << message;
+        //     break;
+        //   case QtWarningMsg:
+        //     MpvPWarning() << message;
+        //     break;
+        //   case QtInfoMsg:
+        //     MpvPInfo() << message;
+        //     break;
+        //   case QtDebugMsg:
+        //     MpvPDebug() << message;
+        //     break;
+        //   default:
+        //     continue;
+        // }
+
+        emit q->newLogMessage(level, prefix, text);
+      } break;
+
+      case MPV_EVENT_SHUTDOWN: {
+        if (mpv_) {
+          mpv_terminate_destroy(std::exchange(mpv_, nullptr));
+        }
+      } break;
+
+      default:
+        // Ignore uninteresting or unknown events.
+        break;
+    }
+  }
+}
+
+void MpvPlayer::nameChanged(const QString&) {}
+void MpvPlayer::urlChanged(const QUrl&) {}
+void MpvPlayer::pausedChanged(bool) {}
+void MpvPlayer::playStateChanged(int) {}
+void MpvPlayer::durationChanged(double) {}
+void MpvPlayer::videoSizeChanged(int, int) {}
+void MpvPlayer::videoStarted() {}
+void MpvPlayer::newLogMessage(QtMsgType, const QString&, const QString&) {}
 
 MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
     : d(new Private(this)) {
@@ -94,37 +264,37 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
       QLibraryInfo::isDebugBuild() ? "all=v" : "all=status"));
 
   // Request hw decoding, just for testing.
-  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "hwdec", "auto"));
+  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "hwdec", "auto-copy"));
 #ifdef Q_OS_WINDOWS
-  CHECK_MPV_ERROR(
-      mpv::qt::set_option_variant(d->mpv_, "hwdec", "d3d11va-copy"));
-  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "ao", "null"));
+  // CHECK_MPV_ERROR(
+  //     mpv::qt::set_option_variant(d->mpv_, "hwdec", "d3d11va-copy"));
   // CHECK_MPV_ERROR(
   //     mpv::qt::set_option_variant(d->mpv_, "audio-device", "wasapi"));
   // CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "vo", "gpu"));
   // CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "gpu-context",
   // "d3d11"));
 #endif  // Q_OS_WINDOWS
+  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "ao", "null"));
 
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "decoder+vo"));
   // CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "yes"));
+
+  // Low latency playback
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "profile", "low-latency"));
+
+  // Fastest scaling
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "scale", "bilinear"));
+
+  // Fast sws-scale
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "sws-fast", "yes"));
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "zimg-fast", "yes"));
 
   // Request log messages. They are received as MPV_EVENT_LOG_MESSAGE.
   CHECK_MPV_ERROR(mpv_request_log_messages(
       d->mpv_, QLibraryInfo::isDebugBuild() ? "v" : "status"));
 
-  // From this point on, the wakeup function will be called. The callback
-  // can come from any thread, so we use the QueuedConnection mechanism to
-  // relay the wakeup in a thread-safe way.
-  mpv_set_wakeup_callback(
-      d->mpv_,
-      [](void* ctx) {
-        MpvPlayer* self = static_cast<MpvPlayer*>(ctx);
-        QMetaObject::invokeMethod(
-            self->d->impl_, [self] { self->processMpvEvents(); },
-            Qt::QueuedConnection);
-      },
-      this);
+  d->mpv_event_thread_running_.store(true, std::memory_order_release);
+  d->mpv_event_thread_ = std::thread([this] { d->processMpvEvents(); });
 
   CHECK_MPV_ERROR(mpv_initialize(d->mpv_));
 }
@@ -134,6 +304,10 @@ MpvPlayer::~MpvPlayer() {
   // mpv_destroy(std::exchange(d->mpv_, nullptr));
   if (d->mpv_) {
     mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
+  }
+  d->mpv_event_thread_running_.store(false, std::memory_order_release);
+  if (d->mpv_event_thread_.joinable()) {
+    d->mpv_event_thread_.join();
   }
 }
 
@@ -279,144 +453,11 @@ void MpvPlayer::processQEvent(QEvent* event) {
   }
 }
 
-void MpvPlayer::processMpvEvents() {
-  // Process all events, until the event queue is empty.
-  while (d->mpv_) {
-    mpv_event* event = mpv_wait_event(d->mpv_, 0);
-    if (event->event_id == MPV_EVENT_NONE) {
-      break;
-    }
-
-    switch (event->event_id) {
-      case MPV_EVENT_START_FILE: {  /// 6: Notification before playback start of
-                                    /// a file (before the file is loaded).* See
-                                    /// also mpv_event and mpv_event_start_file.
-      } break;
-
-      case MPV_EVENT_PROPERTY_CHANGE: {
-        mpv_event_property* prop = (mpv_event_property*)event->data;
-        // qDebug()<<"prop->name:"<<QString(prop->name);
-        if (strcmp(prop->name, "duration") == 0) {
-          if (prop->format == MPV_FORMAT_DOUBLE) {
-            double time = *(double*)prop->data;
-            emit durationChanged(time);
-          }
-        } else if (strcmp(prop->name, "pause") == 0) {
-          if (prop->format == MPV_FORMAT_FLAG) {
-            int flag = *(int*)prop->data;
-            emit playStateChanged(flag ? Play : Stop);
-          }
-        } else if (strcmp(prop->name, "eof-reached") == 0) {
-          if (prop->format == MPV_FORMAT_FLAG) {
-            int flag = *(int*)prop->data;
-            if (flag) {
-              emit playStateChanged(EndReached);
-            }
-          }
-        }
-        break;
-      }
-      case MPV_EVENT_FILE_LOADED: {
-        QTimer::singleShot(5, d->impl_, [this]() {
-          int64_t width, height;
-          // mpv_get_property(d->mpv_, "dwidth", MPV_FORMAT_INT64, &width);
-          // mpv_get_property(d->mpv_, "dheight", MPV_FORMAT_INT64, &height);
-          emit videoStarted();
-        });
-      } break;
-
-      case MPV_EVENT_VIDEO_RECONFIG: {
-        /**
-         * Happens after video changed in some way. This can happen on
-         * resolution changes, pixel format changes, or video filter changes.
-         * The event is sent after the video filters and the VO are
-         * reconfigured. Applications embedding a mpv window should listen to
-         * this event in order to resize the window if needed. Note that this
-         * event can happen sporadically, and you should check yourself whether
-         * the video parameters really changed before doing something expensive.
-         */
-      } break;
-
-      case MPV_EVENT_AUDIO_RECONFIG: {
-        /**
-         * Similar to MPV_EVENT_VIDEO_RECONFIG. This is relatively
-         * uninteresting, because there is no such thing as audio output
-         * embedding.
-         */
-      } break;
-
-      case MPV_EVENT_LOG_MESSAGE: {
-        auto* msg = static_cast<mpv_event_log_message*>(event->data);
-
-        static const QMap<int, QtMsgType> kMpvToQtMsgType = {
-            {MPV_LOG_LEVEL_FATAL, QtFatalMsg},
-            {MPV_LOG_LEVEL_ERROR, QtCriticalMsg},
-            {MPV_LOG_LEVEL_WARN, QtWarningMsg},
-            {MPV_LOG_LEVEL_INFO, QtInfoMsg},
-            {MPV_LOG_LEVEL_V, QtDebugMsg},
-            {MPV_LOG_LEVEL_DEBUG, QtDebugMsg},
-            {MPV_LOG_LEVEL_TRACE, QtDebugMsg},
-        };
-        auto it = kMpvToQtMsgType.find(msg->log_level);
-        if (it == kMpvToQtMsgType.cend()) {
-          continue;
-        }
-        QtMsgType level = it.value();
-
-        QString prefix = QString::fromUtf8(msg->prefix);
-
-        // Trim text end
-        QString text = QString::fromUtf8(msg->text);
-        int length = text.length();
-        for (int i = length - 1; i >= 0; --i) {
-          if (text[i].isSpace()) {
-            --length;
-          } else {
-            break;
-          }
-        }
-        text = text.left(length);
-
-        QString message = QStringLiteral("[%1] %2").arg(prefix, text);
-        switch (level) {
-          case QtFatalMsg:
-            MpvFatal("%s", qPrintable(message));
-            break;
-          case QtCriticalMsg:
-            MpvCritical() << message;
-            break;
-          case QtWarningMsg:
-            MpvWarning() << message;
-            break;
-          case QtInfoMsg:
-            MpvInfo() << message;
-            break;
-          case QtDebugMsg:
-            MpvDebug() << message;
-            break;
-          default:
-            continue;
-        }
-
-        emit newLogMessage(level, prefix, text);
-      } break;
-
-      case MPV_EVENT_SHUTDOWN: {
-        if (d->mpv_) {
-          mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
-        }
-      } break;
-
-      default:
-        // Ignore uninteresting or unknown events.
-        break;
-    }
-  }
-}
-
 MpvPlayerWidget::MpvPlayerWidget(const QString& name, QWidget* parent,
                                  Qt::WindowFlags f)
     : QWidget(parent, f), MpvPlayer(this, name), d(MpvPlayer::d.get()) {
+  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "vo", "gpu-next"));
+
   setAttribute(Qt::WA_DontCreateNativeAncestors, true);
   setAttribute(Qt::WA_NativeWindow, true);
   int64_t wid = winId();

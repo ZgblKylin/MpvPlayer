@@ -14,11 +14,11 @@ class MpvPlayer {
 
   QString name() const;
   void setName(const QString& name);
-  virtual void nameChanged(const QString& name) = 0;
+  virtual void nameChanged(const QString& name);
 
   void setUrl(const QUrl& url);
   QUrl url() const;
-  virtual void urlChanged(const QUrl& url) = 0;
+  virtual void urlChanged(const QUrl& url);
 
   struct mpv_handle* mpv_handle() const;
 
@@ -26,17 +26,17 @@ class MpvPlayer {
   void pause();
   bool isPaused() const;
   void setPaused(bool paused);
-  virtual void pausedChanged(bool paused) = 0;
+  virtual void pausedChanged(bool paused);
   void resume();
   void stop();
 
   enum PlayState { Play, Pause, EndReached, Stop, Unknown };
-  virtual void playStateChanged(int state) = 0;
-  virtual void durationChanged(double value) = 0;
-  virtual void videoSizeChanged(int width, int height) = 0;
-  virtual void videoStarted() = 0;
+  virtual void playStateChanged(int state);
+  virtual void durationChanged(double value);
+  virtual void videoSizeChanged(int width, int height);
+  virtual void videoStarted();
   virtual void newLogMessage(QtMsgType level, const QString& prefix,
-                             const QString& msg) = 0;
+                             const QString& msg);
 
   QSize videoSize() const;
   QSize displaySize() const;
@@ -54,7 +54,6 @@ class MpvPlayer {
 
  protected:
   void processQEvent(QEvent* event);
-  void processMpvEvents();
 
  private:
   friend class MpvPlayerWidget;
