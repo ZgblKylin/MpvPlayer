@@ -301,13 +301,13 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
 
 MpvPlayer::~MpvPlayer() {
   stop();
-  // mpv_destroy(std::exchange(d->mpv_, nullptr));
-  if (d->mpv_) {
-    mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
-  }
   d->mpv_event_thread_running_.store(false, std::memory_order_release);
   if (d->mpv_event_thread_.joinable()) {
     d->mpv_event_thread_.join();
+  }
+  // mpv_destroy(std::exchange(d->mpv_, nullptr));
+  if (d->mpv_) {
+    mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
   }
 }
 
