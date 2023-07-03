@@ -278,8 +278,11 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
   // "d3d11"));
 #endif  // Q_OS_WINDOWS
   CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "ao", "null"));
+  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "mute", "yes"));
+  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "ao-null-untimed", "yes"));
+  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "audio-fallback-to-null", "yes"));
 
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "decoder+vo"));
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "vo"));
   // CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "yes"));
 
   // Low latency playback
