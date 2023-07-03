@@ -119,12 +119,14 @@ void MpvPlayer::Private::processMpvEvents() {
         }
         break;
       }
+
       case MPV_EVENT_FILE_LOADED: {
         QTimer::singleShot(5, impl_, [this]() {
           int64_t width, height;
           // mpv_get_property(mpv_, "dwidth", MPV_FORMAT_INT64, &width);
           // mpv_get_property(mpv_, "dheight", MPV_FORMAT_INT64, &height);
           emit q->videoStarted();
+          emit q->playStateChanged(Play);
         });
       } break;
 
@@ -350,7 +352,7 @@ void MpvPlayer::play(const QUrl& url) {
   if (!url.isEmpty()) {
     setUrl(url);
   }
-  setPlayerProperty("pause", false);
+  resume();
 }
 
 struct mpv_handle* MpvPlayer::mpv_handle() const {
