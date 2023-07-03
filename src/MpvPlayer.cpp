@@ -353,7 +353,9 @@ void MpvPlayer::play(const QUrl& url) {
   setPlayerProperty("pause", false);
 }
 
-struct mpv_handle* MpvPlayer::mpv_handle() const { return d->mpv_; }
+struct mpv_handle* MpvPlayer::mpv_handle() const {
+  return d->mpv_;
+}
 
 void MpvPlayer::pause() { setPlayerProperty("pause", true); }
 
