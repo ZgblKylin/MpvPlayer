@@ -165,10 +165,11 @@ void MpvPlayer::Private::processMpvEvents() {
         } else if (msg->log_level >= MPV_LOG_LEVEL_V) {
           level = QtDebugMsg;
         } else if (msg->log_level >= MPV_LOG_LEVEL_DEBUG) {
-          continue;
-          // level = QtDebugMsg;
+          level = QtDebugMsg;
+          // continue;
         } else if (msg->log_level >= MPV_LOG_LEVEL_TRACE) {
-          continue;
+          level = QtDebugMsg;
+          // continue;
         } else {
           continue;
         }
@@ -188,25 +189,25 @@ void MpvPlayer::Private::processMpvEvents() {
         text = text.left(length);
 
         QString message = QStringLiteral("[%1] %2").arg(prefix, text);
-        // switch (level) {
-        //   case QtFatalMsg:
-        //     MpvPFatal("%s", qPrintable(message));
-        //     break;
-        //   case QtCriticalMsg:
-        //     MpvPCritical() << message;
-        //     break;
-        //   case QtWarningMsg:
-        //     MpvPWarning() << message;
-        //     break;
-        //   case QtInfoMsg:
-        //     MpvPInfo() << message;
-        //     break;
-        //   case QtDebugMsg:
-        //     MpvPDebug() << message;
-        //     break;
-        //   default:
-        //     continue;
-        // }
+        switch (level) {
+          case QtFatalMsg:
+            MpvPFatal("%s", qPrintable(message));
+            break;
+          case QtCriticalMsg:
+            MpvPCritical() << message;
+            break;
+          case QtWarningMsg:
+            MpvPWarning() << message;
+            break;
+          case QtInfoMsg:
+            MpvPInfo() << message;
+            break;
+          case QtDebugMsg:
+            MpvPDebug() << message;
+            break;
+          default:
+            continue;
+        }
 
         emit q->newLogMessage(level, prefix, text);
       } break;
