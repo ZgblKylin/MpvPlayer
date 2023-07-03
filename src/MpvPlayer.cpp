@@ -189,25 +189,25 @@ void MpvPlayer::Private::processMpvEvents() {
         text = text.left(length);
 
         QString message = QStringLiteral("[%1] %2").arg(prefix, text);
-        switch (level) {
-          case QtFatalMsg:
-            MpvPFatal("%s", qPrintable(message));
-            break;
-          case QtCriticalMsg:
-            MpvPCritical() << message;
-            break;
-          case QtWarningMsg:
-            MpvPWarning() << message;
-            break;
-          case QtInfoMsg:
-            MpvPInfo() << message;
-            break;
-          case QtDebugMsg:
-            MpvPDebug() << message;
-            break;
-          default:
-            continue;
-        }
+        // switch (level) {
+        //   case QtFatalMsg:
+        //     MpvPFatal("%s", qPrintable(message));
+        //     break;
+        //   case QtCriticalMsg:
+        //     MpvPCritical() << message;
+        //     break;
+        //   case QtWarningMsg:
+        //     MpvPWarning() << message;
+        //     break;
+        //   case QtInfoMsg:
+        //     MpvPInfo() << message;
+        //     break;
+        //   case QtDebugMsg:
+        //     MpvPDebug() << message;
+        //     break;
+        //   default:
+        //     continue;
+        // }
 
         emit q->newLogMessage(level, prefix, text);
       } break;
@@ -261,7 +261,7 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
   // "yes"));
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "input-vo-keyboard", "no"));
 
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "terminal", "no"));
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "terminal", "yes"));
   CHECK_MPV_ERROR(mpv_set_option_string(
       d->mpv_, "msg-level",
       QLibraryInfo::isDebugBuild() ? "all=v" : "all=status"));
