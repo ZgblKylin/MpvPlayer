@@ -105,7 +105,7 @@ void MpvPlayer::Private::processMpvEvents() {
           case kPause:
             if (prop->format == MPV_FORMAT_FLAG) {
               int flag = *(int*)prop->data;
-              emit q->playStateChanged(flag ? Play : Stop);
+              emit q->playStateChanged(flag ? Play : Pause);
             }
           case kEof:
             if (prop->format == MPV_FORMAT_FLAG) {
@@ -355,7 +355,7 @@ void MpvPlayer::play(const QUrl& url) {
 
 struct mpv_handle* MpvPlayer::mpv_handle() const { return d->mpv_; }
 
-void MpvPlayer::pause() { setPlayerProperty("true", false); }
+void MpvPlayer::pause() { setPlayerProperty("pause", true); }
 
 bool MpvPlayer::isPaused() const { return getPlayerProperty<bool>("pause"); }
 
