@@ -12,6 +12,11 @@ class MpvPlayer {
  public:
   virtual ~MpvPlayer();
 
+  // Completely disable audio track
+  void disableAudio();
+  // May increase performance, but with lower quality
+  void enableHighPerformanceMode();
+
   QString name() const;
   void setName(const QString& name);
   virtual void nameChanged(const QString& name);

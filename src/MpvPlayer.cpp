@@ -277,20 +277,6 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
   // CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "gpu-context",
   // "d3d11"));
 #endif  // Q_OS_WINDOWS
-  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "ao", "null"));
-  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "mute", "yes"));
-  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "ao-null-untimed", "yes"));
-  CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "audio-fallback-to-null", "yes"));
-
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "vo"));
-  // CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "yes"));
-
-  // Fastest scaling
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "scale", "bilinear"));
-
-  // Fast sws-scale
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "sws-fast", "yes"));
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "zimg-fast", "yes"));
 
   // Request log messages. They are received as MPV_EVENT_LOG_MESSAGE.
   CHECK_MPV_ERROR(mpv_request_log_messages(
@@ -312,6 +298,28 @@ MpvPlayer::~MpvPlayer() {
   if (d->mpv_) {
     mpv_terminate_destroy(std::exchange(d->mpv_, nullptr));
   }
+}
+
+void MpvPlayer::disableAudio() {
+  setPlayerProperty("ao", "no");
+  setPlayerProperty("aid", "no");
+  setPlayerProperty("no-audio", "yes");
+  setPlayerProperty("mute", "yes");
+  setPlayerProperty("ao-null-untimed", "yes");
+  setPlayerProperty("audio-fallback-to-null", "yes");
+}
+
+void MpvPlayer::enableHighPerformanceMode() {
+  // Allow frame drop
+  setPlayerProperty("framedrop", "vo");
+  // setPlayerProperty("framedrop", "yes");
+
+  // Fastest scaling
+  setPlayerProperty("scale", "bilinear");
+
+  // Fast sws-scale
+  setPlayerProperty("sws-fast", "yes");
+  setPlayerProperty("zimg-fast", "yes");
 }
 
 QString MpvPlayer::name() const { return d->name_; }
@@ -356,9 +364,7 @@ void MpvPlayer::play(const QUrl& url) {
   resume();
 }
 
-struct mpv_handle* MpvPlayer::mpv_handle() const {
-  return d->mpv_;
-}
+struct mpv_handle* MpvPlayer::mpv_handle() const { return d->mpv_; }
 
 void MpvPlayer::pause() { setPlayerProperty("pause", true); }
 

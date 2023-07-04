@@ -62,6 +62,13 @@ int main(int argc, char* argv[]) {
       QCommandLineOption(QStringList() << "s"
                                        << "split",
                          "Used with --repeat, split first video into n count"));
+  parser.addOption(QCommandLineOption(QStringList() << "m"
+                                                    << "mute",
+                                      "Mute all players"));
+  parser.addOption(QCommandLineOption(
+      QStringList() << "p"
+                    << "performance-mode",
+      "Performance mode, disable some features to improve performance"));
   parser.addPositionalArgument("url", "Video urls", "urls...");
   parser.process(app);
 
@@ -69,6 +76,8 @@ int main(int argc, char* argv[]) {
   bool is_widget = parser.value("type").toLower() == "widget";
   bool is_opengl = parser.value("type").toLower() == "opengl";
   bool is_qml = parser.value("type").toLower() == "qml";
+  bool is_mute = parser.isSet("mute");
+  bool is_performance_mode = parser.isSet("performance-mode");
   int count = std::max(parser.value("repeat").toInt(), 1);
   bool split = parser.isSet("split");
   QStringList urls = parser.positionalArguments();
@@ -126,6 +135,12 @@ int main(int argc, char* argv[]) {
         player = new MpvPlayerWidget(QString::number(i));
       } else if (is_opengl) {
         player = new MpvPlayerOpenGLWidget(QString::number(i));
+      }
+      if (is_mute) {
+        player->disableAudio();
+      }
+      if (is_performance_mode) {
+        player->enableHighPerformanceMode();
       }
       layout->addWidget(dynamic_cast<QWidget*>(player), i / width, i % width);
     }
