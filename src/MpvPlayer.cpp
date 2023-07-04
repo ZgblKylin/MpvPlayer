@@ -285,9 +285,6 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "vo"));
   // CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "framedrop", "yes"));
 
-  // Low latency playback
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "profile", "low-latency"));
-
   // Fastest scaling
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "scale", "bilinear"));
 
