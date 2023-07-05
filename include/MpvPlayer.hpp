@@ -35,12 +35,11 @@ class MpvPlayer {
   void resume();
   void stop();
 
-  enum PlayState { Play, Pause, EndReached, Stop, Unknown };
+  enum PlayState { Stop, Play, Pause, EndReached };
   virtual void playStateChanged(int state);
   virtual void durationChanged(double value);
-  virtual void videoSizeChanged(int width, int height);
   virtual void videoStarted();
-  virtual void newLogMessage(QtMsgType level, const QString& prefix,
+  virtual void newLogMessage(int level, const QString& prefix,
                              const QString& msg);
 
   QSize videoSize() const;
@@ -87,9 +86,8 @@ class MpvPlayerWidget : public QWidget, public MpvPlayer {
   Q_SIGNAL void pausedChanged(bool paused) override;
   Q_SIGNAL void playStateChanged(int state) override;
   Q_SIGNAL void durationChanged(double value) override;
-  Q_SIGNAL void videoSizeChanged(int width, int height) override;
   Q_SIGNAL void videoStarted() override;
-  Q_SIGNAL void newLogMessage(QtMsgType level, const QString& prefix,
+  Q_SIGNAL void newLogMessage(int level, const QString& prefix,
                               const QString& msg) override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
@@ -124,9 +122,8 @@ class MpvPlayerOpenGLWidget : public QOpenGLWidget, public MpvPlayer {
   Q_SIGNAL void pausedChanged(bool paused) override;
   Q_SIGNAL void playStateChanged(int state) override;
   Q_SIGNAL void durationChanged(double value) override;
-  Q_SIGNAL void videoSizeChanged(int width, int height) override;
   Q_SIGNAL void videoStarted() override;
-  Q_SIGNAL void newLogMessage(QtMsgType level, const QString& prefix,
+  Q_SIGNAL void newLogMessage(int level, const QString& prefix,
                               const QString& msg) override;
 
   Q_SLOT QVariant command(const QVariant& args) override {
@@ -169,9 +166,8 @@ class MpvPlayerQuickObject : public QQuickFramebufferObject, public MpvPlayer {
   Q_SIGNAL void pausedChanged(bool paused) override;
   Q_SIGNAL void playStateChanged(int state) override;
   Q_SIGNAL void durationChanged(double value) override;
-  Q_SIGNAL void videoSizeChanged(int width, int height) override;
   Q_SIGNAL void videoStarted() override;
-  Q_SIGNAL void newLogMessage(QtMsgType level, const QString& prefix,
+  Q_SIGNAL void newLogMessage(int level, const QString& prefix,
                               const QString& msg) override;
 
   Q_SLOT QVariant command(const QVariant& args) override {

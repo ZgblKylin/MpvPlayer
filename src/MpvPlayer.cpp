@@ -67,6 +67,9 @@ struct MpvPlayer::Private {
   QObject* impl_ = nullptr;
   QString name_{};
   QUrl url_{};
+  PlayState state_ = Stop;
+  void changeState(PlayState state, bool resume = false);
+
   struct mpv_handle* mpv_ = nullptr;
   mpv_render_context* mpv_gl_ = nullptr;
 
@@ -75,59 +78,93 @@ struct MpvPlayer::Private {
   void processMpvEvents();
 };
 
+void MpvPlayer::Private::changeState(PlayState state, bool resume) {
+  if (state_ == state) {
+    return;
+  }
+
+  switch (state) {
+    case Stop:
+      break;
+    case Play:
+      if (resume && (state_ != Pause)) {
+        return;
+      }
+      break;
+    case Pause:
+      if (state_ != Play) {
+        return;
+      }
+      break;
+    case EndReached:
+      break;
+    default:
+      break;
+  }
+  state_ = state;
+  emit q->playStateChanged(state);
+}
+
 void MpvPlayer::Private::processMpvEvents() {
   // Process all events, until the event queue is empty.
   while (mpv_event_thread_running_.load(std::memory_order_acquire) && mpv_) {
-    mpv_event* event = mpv_wait_event(mpv_, 1);
+    mpv_event* event = mpv_wait_event(mpv_, -1);
     if (event->event_id == MPV_EVENT_NONE) {
-      break;
+      continue;
     }
 
     switch (event->event_id) {
       case MPV_EVENT_START_FILE: {  /// 6: Notification before playback start of
                                     /// a file (before the file is loaded).* See
                                     /// also mpv_event and mpv_event_start_file.
+        MpvPDebug() << "File start";
       } break;
 
       case MPV_EVENT_PROPERTY_CHANGE: {
         mpv_event_property* prop = (mpv_event_property*)event->data;
-        static constexpr const int kDuration = 1;
-        static constexpr const int kPause = 2;
-        static constexpr const int kEof = 3;
-        static const QMap<QString, int> kPropertyMap = {
-            {"duration", kDuration}, {"pause", kPause}, {"eof-reached", kEof}};
-        switch (kPropertyMap.value(prop->name, -1)) {
-          case kDuration:
-            if (prop->format == MPV_FORMAT_DOUBLE) {
-              double time = *(double*)prop->data;
-              emit q->durationChanged(time);
-            }
-          case kPause:
-            if (prop->format == MPV_FORMAT_FLAG) {
-              int flag = *(int*)prop->data;
-              emit q->playStateChanged(flag ? Play : Pause);
-            }
-          case kEof:
-            if (prop->format == MPV_FORMAT_FLAG) {
-              int flag = *(int*)prop->data;
-              if (flag) {
-                emit q->playStateChanged(EndReached);
-              }
-            }
+        QVariant value;
+        switch (prop->format) {
+          case MPV_FORMAT_STRING:
+            value = QString::fromUtf8(*(char**)prop->data);
+            break;
+          case MPV_FORMAT_OSD_STRING:
+            value = QString::fromUtf8(*(char**)prop->data);
+            break;
+          case MPV_FORMAT_FLAG:
+            value = *(int*)prop->data;
+            break;
+          case MPV_FORMAT_INT64:
+            value = *(int64_t*)prop->data;
+            break;
+          case MPV_FORMAT_DOUBLE:
+            value = *(double*)prop->data;
+            break;
+          case MPV_FORMAT_NODE: {
+            value = mpv::qt::node_to_variant((mpv_node*)prop->data);
+          } break;
           default:
             break;
         }
-        break;
-      }
+        MpvPDebug() << "Property: " << prop->name << ' ' << value;
+        if (strcmp(prop->name, "duration") == 0) {
+          double time = value.value<double>();
+          if (time > 0) {
+            emit q->durationChanged(time);
+          }
+        } else if (strcmp(prop->name, "pause") == 0) {
+          bool resume = value.value<bool>();
+          changeState(resume ? Play : Pause, resume);
+        } else if (strcmp(prop->name, "eof-reached") == 0) {
+          if (value.value<bool>()) {
+            changeState(EndReached);
+          }
+        }
+      } break;
 
       case MPV_EVENT_FILE_LOADED: {
-        QTimer::singleShot(5, impl_, [this]() {
-          int64_t width, height;
-          // mpv_get_property(mpv_, "dwidth", MPV_FORMAT_INT64, &width);
-          // mpv_get_property(mpv_, "dheight", MPV_FORMAT_INT64, &height);
-          emit q->videoStarted();
-          emit q->playStateChanged(Play);
-        });
+        emit q->videoStarted();
+        changeState(Play);
+        MpvPDebug() << "File loaded";
       } break;
 
       case MPV_EVENT_VIDEO_RECONFIG: {
@@ -191,7 +228,8 @@ void MpvPlayer::Private::processMpvEvents() {
         QString message = QStringLiteral("[%1] %2").arg(prefix, text);
         // switch (level) {
         //   case QtFatalMsg:
-        //     MpvPFatal("%s", qPrintable(message));
+        //     // MpvPFatal("%s", qPrintable(message));
+        //     MpvPCritical() << message;
         //     break;
         //   case QtCriticalMsg:
         //     MpvPCritical() << message;
@@ -223,6 +261,7 @@ void MpvPlayer::Private::processMpvEvents() {
         break;
     }
   }
+  qDebug() << "Finish";
 }
 
 void MpvPlayer::nameChanged(const QString&) {}
@@ -230,9 +269,8 @@ void MpvPlayer::urlChanged(const QUrl&) {}
 void MpvPlayer::pausedChanged(bool) {}
 void MpvPlayer::playStateChanged(int) {}
 void MpvPlayer::durationChanged(double) {}
-void MpvPlayer::videoSizeChanged(int, int) {}
 void MpvPlayer::videoStarted() {}
-void MpvPlayer::newLogMessage(QtMsgType, const QString&, const QString&) {}
+void MpvPlayer::newLogMessage(int, const QString&, const QString&) {}
 
 MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
     : d(new Private(this)) {
@@ -261,10 +299,10 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
   // "yes"));
   CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "input-vo-keyboard", "no"));
 
-  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "terminal", "yes"));
+  CHECK_MPV_ERROR(mpv_set_option_string(d->mpv_, "terminal", "no"));
   CHECK_MPV_ERROR(mpv_set_option_string(
       d->mpv_, "msg-level",
-      QLibraryInfo::isDebugBuild() ? "all=v" : "all=status"));
+      QLibraryInfo::isDebugBuild() ? "all=debug" : "all=status"));
 
   // Request hw decoding, just for testing.
   CHECK_MPV_ERROR(mpv::qt::set_option_variant(d->mpv_, "hwdec", "auto-copy"));
@@ -280,17 +318,24 @@ MpvPlayer::MpvPlayer(QObject* impl, const QString& name)
 
   // Request log messages. They are received as MPV_EVENT_LOG_MESSAGE.
   CHECK_MPV_ERROR(mpv_request_log_messages(
-      d->mpv_, QLibraryInfo::isDebugBuild() ? "v" : "status"));
+      d->mpv_, QLibraryInfo::isDebugBuild() ? "debug" : "status"));
 
   d->mpv_event_thread_running_.store(true, std::memory_order_release);
   d->mpv_event_thread_ = std::thread([this] { d->processMpvEvents(); });
 
   CHECK_MPV_ERROR(mpv_initialize(d->mpv_));
+
+  CHECK_MPV_ERROR(
+      mpv_observe_property(d->mpv_, 0, "duration", MPV_FORMAT_DOUBLE));
+  CHECK_MPV_ERROR(mpv_observe_property(d->mpv_, 0, "pause", MPV_FORMAT_FLAG));
+  CHECK_MPV_ERROR(
+      mpv_observe_property(d->mpv_, 0, "eof-reached", MPV_FORMAT_FLAG));
 }
 
 MpvPlayer::~MpvPlayer() {
   stop();
   d->mpv_event_thread_running_.store(false, std::memory_order_release);
+  mpv_wakeup(d->mpv_);
   if (d->mpv_event_thread_.joinable()) {
     d->mpv_event_thread_.join();
   }
@@ -303,7 +348,6 @@ MpvPlayer::~MpvPlayer() {
 void MpvPlayer::disableAudio() {
   setPlayerProperty("ao", "no");
   setPlayerProperty("aid", "no");
-  setPlayerProperty("no-audio", "yes");
   setPlayerProperty("mute", "yes");
   setPlayerProperty("ao-null-untimed", "yes");
   setPlayerProperty("audio-fallback-to-null", "yes");
@@ -364,7 +408,9 @@ void MpvPlayer::play(const QUrl& url) {
   resume();
 }
 
-struct mpv_handle* MpvPlayer::mpv_handle() const { return d->mpv_; }
+struct mpv_handle* MpvPlayer::mpv_handle() const {
+  return d->mpv_;
+}
 
 void MpvPlayer::pause() { setPlayerProperty("pause", true); }
 
@@ -424,7 +470,7 @@ QVariant MpvPlayer::command(const QVariant& args) {
     QVariant ret = mpv::qt::command_variant(d->mpv_, args);
     MpvDebug() << "command " << args << ": " << ret;
     if (args.toList().contains("stop")) {
-      emit playStateChanged(Stop);
+      d->changeState(Stop);
     }
     return ret;
   } else {
